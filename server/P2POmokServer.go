@@ -106,7 +106,7 @@ func splitIpPort(client *clientStruct, clientIpPort string) {
 func startServer() (*serverStruct, net.Listener, error) {
 	server := &serverStruct{
 		timeStart:  time.Now(),
-		serverPort: strconv.Itoa((50211440 % 10000) + 20000),
+		serverPort: strconv.Itoa((50211440 % 10000) + 50000),
 		clients:    list.New(),
 		channels: channelStruct{
 			newClient:     make(chan clientStruct),
@@ -419,6 +419,5 @@ func clientThread(client clientStruct) {
 			}
 			client.serverCmdChan.message <- client
 		}
-
 	}
 }

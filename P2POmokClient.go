@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +21,8 @@ import (
 type clientStruct struct {
 	stdin []byte
 	lastCommand []byte
-	serverConnection net.Conn
+	TCPServerConn net.Conn
+	UDPP2PConn net.PacketConn
 	clock time.Time
 	server string
 	port string
@@ -32,30 +32,30 @@ type clientStruct struct {
 func startClient() (*clientStruct, error) {
 	client := &clientStruct {
 		stdin: []byte(""),
-		serverConnection: nil,
+		TCPServerConn: nil,
 		clock: time.Now(),
 		server: "localhost",
-		port: strconv.Itoa((50211440 % 10000) + 20000),
+		port: strconv.Itoa((50211440 % 10000) + 50000),
 		username: os.Args[1],
 	}
 
 	var err error
-	client.serverConnection, err = net.Dial("tcp", client.server+":"+client.port)
+	client.TCPServerConn, err = net.Dial("tcp", client.server+":"+client.port)
+	client.UDPP2PConn, err = net.ListenPacket("udp", ":")
 
 	if err != nil {
 		return client, err
 	}
 
-	// localAddr := client.serverConnection.LocalAddr().(*net.TCPAddr)
-	// fmt.Printf("The client is running on port %d\n", localAddr.Port)
+	fmt.Printf("[TCP] The client is running on port %s\n", client.TCPServerConn.LocalAddr().String())
+	fmt.Printf("[UDP] The client is running on %s\n", client.UDPP2PConn.LocalAddr().String())
 	return client, nil
 }
 
 // Function to read from the server the first time we connect
-// if we are allowed to connect to the chat room
-// that implies knowing if the server is full or if our username is not a duplicata
+// Waiting to match with a person in order to play omok
 func firstHandshake(client *clientStruct) {
-	count, err := client.serverConnection.Write([]byte(os.Args[1]))
+	count, err := client.TCPServerConn.Write([]byte(os.Args[1]))
 	if err != nil {
 		os.Exit(0)
 	}
@@ -64,13 +64,11 @@ func firstHandshake(client *clientStruct) {
 	}
 	if count > 0 {
 		buffer := make([]byte, 3064)
-		count, err := client.serverConnection.Read(buffer)
+		count, err := client.TCPServerConn.Read(buffer)
 		if err != nil {
-			fmt.Println("\n[that nickname is already used by another user. cannot connect.]")
 			os.Exit(0)
 		}
 		if count <= 0 {
-			fmt.Println("\n[that nickname is already used by another user. cannot connect.]")
 			os.Exit(0)
 		}
 		if count > 0 {
@@ -108,13 +106,13 @@ func getCommand(command []string, client *clientStruct) []byte {
 }
 
 func readFromServer(client *clientStruct, buffer []byte) {
-	count, err := client.serverConnection.Read(buffer)
+	count, err := client.TCPServerConn.Read(buffer)
 	if err != nil {
-		client.serverConnection.Close()
+		client.TCPServerConn.Close()
 		os.Exit(0)
 	}
 	if count <= 0 {
-		client.serverConnection.Close()
+		client.TCPServerConn.Close()
 		os.Exit(0)
 	}
 	if count > 0 {
@@ -131,13 +129,11 @@ func readFromServer(client *clientStruct, buffer []byte) {
 }
 
 func writeToServer(client *clientStruct, buffer []byte) {
-	count, err := client.serverConnection.Write(buffer)
+	count, err := client.TCPServerConn.Write(buffer)
 	if err != nil {
-		client.serverConnection.Close()
 		os.Exit(0)
 	}
 	if count <= 0 {
-		client.serverConnection.Close()
 		os.Exit(0)
 	}
 	fmt.Println()
@@ -200,28 +196,18 @@ func main() {
 	}
 
 	// Goroutine to handle CTRL+C signal
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		for sig := range c {
-			if sig == os.Interrupt {
-				client.serverConnection.Write([]byte{'3'});
-				client.lastCommand = []byte("\\exit")
-			}
-		}
-	}()
-
-	// Reading from the server in a goroutine
-	go func() {
-		buffer := make([]byte, 10024)
-
-		for {
-			buffer = make([]byte, 10024)
-			readFromServer(client, buffer)
-		}
-	}()
+	// c := make(chan os.Signal, 1)
+	// signal.Notify(c, os.Interrupt)
+	// go func() {
+	// 	for sig := range c {
+	// 		if sig == os.Interrupt {
+	// 			client.TCPServerConn.Write([]byte{'3'});
+	// 			client.lastCommand = []byte("\\exit")
+	// 		}
+	// 	}
+	// }()
 
 	firstHandshake(client)
-	clientLoop(client)
+	// clientLoop(client)
 	os.Exit(0)
 }
